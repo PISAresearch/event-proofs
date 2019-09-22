@@ -121,7 +121,7 @@ describe("EventProof", () => {
         expect(receiptsRoot).to.equal(block.receiptsRoot);
     });
 
-    it("prove inclusion of receipt", async () => {
+    it("prove merkle inclusion", async () => {
         // get a proof for a root - then try to prove it using prove-eth?
         const txHash = "0x0ea44167dd31bca6a29a8f5c52fe4b73e92a7f6b9898322e8dc70478a7366806";
         const eventProof = await loadFixture(deployEventProof);
@@ -129,7 +129,7 @@ describe("EventProof", () => {
         const pr = await prover.receiptProof(txHash);
         const receiptProof = prepareReceiptProof(pr);
 
-        const result = await eventProof.functions.proveInclusion(
+        const result = await eventProof.functions.merkleProof(
             receiptProof.rlpEncodedReceipt,
             receiptProof.path,
             receiptProof.witness,

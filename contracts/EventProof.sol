@@ -3,7 +3,7 @@ import "./PatriciaTree.sol";
 
 contract EventProof {
     // just a public method to test the merkle patricia proof
-    function proveInclusion(
+    function merkleProof(
         bytes memory value,
         bytes memory encodedPath,
         bytes memory rlpParentNodes,
