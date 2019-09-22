@@ -1,5 +1,4 @@
 pragma solidity ^0.5.11;
-pragma experimental ABIEncoderV2;
 import "./PatriciaTree.sol";
 
 contract EventProof {
@@ -35,18 +34,6 @@ contract EventProof {
         }
     }
 
-    struct PatriciaMerkleProof {
-        /**
-         * The key in the patricia merkle tree to which the witness corresponds
-         */
-        bytes path;
-
-        /**
-         * The merkle proof of the item at the provided path
-         */
-        bytes witness;
-    }
-
     /**
      * Proves a header matches the a trusted block hash, and that that header
      * contains a receipts root which itself contains a provided receipt.
@@ -55,7 +42,8 @@ contract EventProof {
         bytes32 trustedBlockhash,
         bytes memory rlpEncodedBlockHeader,
         bytes memory rlpEncodedReceipt,
-        PatriciaMerkleProof memory receiptProof
+        bytes memory receiptPath,
+        bytes memory receiptWitness
     ) public pure returns(bool) {
         if(trustedBlockhash != keccak256(rlpEncodedBlockHeader)) return false;
 
@@ -63,6 +51,6 @@ contract EventProof {
         bytes32 receiptsRoot = extractReceiptsRoot(rlpEncodedBlockHeader);
 
         // use the root to prove inclusion of the receipt
-        return MerklePatriciaProof.verify(rlpEncodedReceipt, receiptProof.path, receiptProof.witness, receiptsRoot);
+        return MerklePatriciaProof.verify(rlpEncodedReceipt, receiptPath, receiptWitness, receiptsRoot);
     }
 }

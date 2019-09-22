@@ -163,10 +163,8 @@ describe("EventProof", () => {
             block.hash,
             rlpBlock,
             receiptProof.rlpEncodedReceipt,
-            {
-                path: receiptProof.path,
-                witness: receiptProof.witness
-            }
+            receiptProof.path,
+            receiptProof.witness
         );
 
         expect(result).to.be.true;
