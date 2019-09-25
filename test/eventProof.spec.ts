@@ -2,60 +2,55 @@ import "mocha";
 import * as chai from "chai";
 import { EventProof } from "../build/EventProof";
 import * as EventProofDefinition from "../build/EventProof.json";
-import { deployContract, solidity, loadFixture } from "ethereum-waffle";
+import { deployContract, solidity, createFixtureLoader } from "ethereum-waffle";
 import { ethers } from "ethers";
 import { BigNumber, RLP } from "ethers/utils";
+import * as Ganache from "ganache-core";
+import { Web3Provider } from "ethers/providers";
+import * as LevelUp from "levelup";
+import EncodingDown from "encoding-down";
+import LevelDOWN from "leveldown";
 const { GetProof } = require("eth-proof");
 const expect = chai.expect;
 chai.use(solidity);
 
+const secret = "0x82f969af00133dbdaf37693b2de5c1ab9038d0b189720b9c9266ae89346e8586";
+const ganache = (Ganache as any).provider({
+    gasLimit: 8000000,
+    accounts: [{ balance: "0xDE0B6B3A7640000", secretKey: secret }]
+});
+const localProvider = new Web3Provider(ganache);
+const wallet = new ethers.Wallet(secret, localProvider);
+const loadFixture = createFixtureLoader(localProvider, [wallet]);
+const jsonRpcUrl = "" // add your own url here
+const prover = new GetProof(jsonRpcUrl);
+
+
+class CachingProvider extends ethers.providers.BaseProvider {
+    private readonly db: LevelUp.LevelUp<EncodingDown<string, any>>;
+
+    constructor(private readonly baseProvider: ethers.providers.BaseProvider) {
+        super(1);
+        this.db = LevelUp.default(EncodingDown(LevelDOWN("db"), { valueEncoding: "json" }));
+    }
+
+    async perform(method: string, params: any) {
+        const key = `${method}:${JSON.stringify(params)}`;
+        try {
+            return await this.db.get(key);
+        } catch (doh) {
+            const basePerfom = await this.baseProvider.perform(method, params);
+            await this.db.put(key, basePerfom);
+            return basePerfom;
+        }
+    }
+}
+const remoteProvider = new CachingProvider(
+    new ethers.providers.JsonRpcProvider(jsonRpcUrl)
+);
+
 describe("EventProof", () => {
-    // 6339082 on ropsten
-
-    // tx hash in that block - 0x3b4cfcf4dc6c43e444528b8a26138992e58020b250a804b6b3e510f75439ea0d
-    const block = {
-        difficulty: "0x1b00af4b0",
-        extraData: "0xde830204058f5061726974792d457468657265756d86312e33342e30826c69",
-        gasLimit: "0x7a121d",
-        gasUsed: "0x7977cb",
-        hash: "0x6a80d3a40c3ccd5ca1d2094bca78e0717e120bc2fc54aa2c0b466197cd6041d7",
-        logsBloom:
-            "0x013000400000808000000100a000000140000000420100010008000102058000000810002002410001000400010020020000000480000000000200200000004000100000024000204002101800002004000000000000020080032000202024000000402000000001001010000044a000800000002000ac00011080500021004c0300010040200820048004000401040100000433000021a0040000080000000000000504000000080010208004500448980400000000080000019220000010010040004a860002400040006000800c000800000300004400400081014040002202000008000000000000008000010200000000400801210540200000a8200000",
-        miner: "0x3dea9963bf4c1a3716025de8ae05a5cac66db46e",
-        mixHash: "0xd729a47678d7952ef0ed00bdc3ac69d09eb7905e0e9a7cc03ed4e7bfc3d398ae",
-        nonce: "0xe31f10001fd65688",
-        number: "0x60ba0a",
-        parentHash: "0x7d3ff957f4ddb1232bc8a84219fa2651ae4828a41e324ac4fb3e108321c1586e",
-        receiptsRoot: "0x8351fdd35fb45615f12f98ecbf74f0d4cab4746bb2341642094ee85e0d47cb7e",
-        sha3Uncles: "0x7f07bb03366d2a9e1ea39b28c3b7839f8de5459bb9251520d055eee346016e8a",
-        size: "0x2f97",
-        stateRoot: "0xd893e5ef2e16e3f759ff3499909e6c90491cc451c23aa933a964984cbbba1380",
-        timestamp: "0x5d724e95",
-        totalDifficulty: "0x51031e033dc855",
-        transactions: [],
-        transactionsRoot: "0xaf498ce6ca2f72e9488693c6f61a8aea92f6f79f92a79f3e99f943ab7699b3bb",
-        uncles: ["0xf25a51c81290eebee3bb3bfbd51461a195c3c18af2c80a84e24426183bc42b81"]
-    };
-
     const rlpEncodedBlock = (block: any) => {
-        // struct BlockHeader {
-        //     bytes32 parentHash;
-        //     bytes32 sha3Uncles;
-        //     address miner;
-        //     bytes32 stateRoot;
-        //     bytes32 transactionsRoot;
-        //     bytes32 receiptsRoot;
-        //     bytes logsBloom;
-        //     uint256 difficulty;
-        //     uint32 number;
-        //     uint32 gasLimit;
-        //     uint32 gasUsed;
-        //     uint32 timestamp;
-        //     bytes extraData;
-        //     bytes32 mixHash;
-        //     uint8 nonce;
-        // }
-
         const selectedBlockElements = [
             block.parentHash,
             block.sha3Uncles,
@@ -67,7 +62,7 @@ describe("EventProof", () => {
             block.difficulty,
             block.number,
             block.gasLimit,
-            block.gasUsed,
+            block.gasUsed === "0x0" ? "0x": block.gasUsed,
             block.timestamp,
             block.extraData,
             block.mixHash,
@@ -94,10 +89,10 @@ describe("EventProof", () => {
         };
     };
 
-    const receiptToRlp = (receipt: ethers.providers.TransactionReceipt) => {
+    const receiptToRlp = (receipt: any) => {
         const forEncoding = [
             new BigNumber(receipt.status).toHexString(),
-            receipt.cumulativeGasUsed.toHexString(),
+            new BigNumber(receipt.cumulativeGasUsed).toHexString(),
             receipt.logsBloom,
             receipt.logs.map(log => [log.address, log.topics, log.data])
         ];
@@ -109,23 +104,25 @@ describe("EventProof", () => {
     }
 
     it("rlp encoding hashes correctly", async () => {
+        const block = await remoteProvider.perform("getBlock", { blockTag: new BigNumber(5000079).toHexString() });
         const rlpBlock = rlpEncodedBlock(block);
         const blockHash = ethers.utils.keccak256(rlpBlock);
         expect(blockHash).to.equal(block.hash);
-    });
+    }).timeout(5000);
 
     it("extracts receipt root", async () => {
         const eventProof = await loadFixture(deployEventProof);
+        const block = await remoteProvider.perform("getBlock", { blockTag: new BigNumber(6339082).toHexString() });
         const rlpBlock = rlpEncodedBlock(block);
         const receiptsRoot = await eventProof.functions.extractReceiptsRoot(rlpBlock);
         expect(receiptsRoot).to.equal(block.receiptsRoot);
-    });
+    }).timeout(5000);
 
     it("prove merkle inclusion", async () => {
-        // get a proof for a root - then try to prove it using prove-eth?
+        // known tx hash in block 6339082
         const txHash = "0x0ea44167dd31bca6a29a8f5c52fe4b73e92a7f6b9898322e8dc70478a7366806";
         const eventProof = await loadFixture(deployEventProof);
-        const prover = new GetProof("https://ropsten.infura.io/v3/e587e78efcdd4c1eb5b068ee99a6ec0b");
+        const block = await remoteProvider.perform("getBlock", { blockTag: new BigNumber(6339082).toHexString() });
         const pr = await prover.receiptProof(txHash);
         const receiptProof = prepareReceiptProof(pr);
 
@@ -137,16 +134,13 @@ describe("EventProof", () => {
         );
 
         expect(result).to.be.true;
-    }).timeout(10000);
+    }).timeout(100000);
 
     it("can rlp encode receipt", async () => {
         const rlpExpected =
             "0xf9016601837925c3b9010000100000000000000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000002000000000000000000000000040000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000040000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000008000000000000000000000000000000000000000000000000000000020000000000000000000f85cf85a947ae0c8ea75428cd62fa48aca8738cff510125f2df842a0934b615ac45ae983959e39bac5d942944fe163a5b1e2b846f603224108d1f56ca0000000000000000000000000dba031ef165613ced730319c5f37ec8e316425ce80";
         const txHash = "0x3b4cfcf4dc6c43e444528b8a26138992e58020b250a804b6b3e510f75439ea0d";
-        const provider = new ethers.providers.JsonRpcProvider(
-            "https://ropsten.infura.io/v3/e587e78efcdd4c1eb5b068ee99a6ec0b"
-        );
-        const receipt = await provider.getTransactionReceipt(txHash);
+        const receipt = await remoteProvider.perform("getTransactionReceipt", { transactionHash: txHash });
         const rlp = receiptToRlp(receipt);
         expect(rlp).to.equal(rlpExpected);
     }).timeout(4000);
@@ -154,7 +148,8 @@ describe("EventProof", () => {
     it("prove header and receipt inclusion", async () => {
         const txHash = "0x0ea44167dd31bca6a29a8f5c52fe4b73e92a7f6b9898322e8dc70478a7366806";
         const eventProof = await loadFixture(deployEventProof);
-        const prover = new GetProof("https://ropsten.infura.io/v3/e587e78efcdd4c1eb5b068ee99a6ec0b");
+        
+        const block = await remoteProvider.perform("getBlock", { blockTag: new BigNumber(6339082).toHexString() });
         const pr = await prover.receiptProof(txHash);
         const receiptProof = prepareReceiptProof(pr);
         const rlpBlock = rlpEncodedBlock(block);
@@ -166,9 +161,27 @@ describe("EventProof", () => {
             receiptProof.path,
             receiptProof.witness
         );
-
         expect(result).to.be.true;
-    }).timeout(5000);
+    }).timeout(100000);
+
+    it("extract parent hash", async () => {
+        const eventProof = await loadFixture(deployEventProof);
+        const block = await remoteProvider.perform("getBlock", { blockTag: new BigNumber(5000079).toHexString() });
+        const rlpBlock = rlpEncodedBlock(block);
+        const parentHash = await eventProof.functions.extractParentHash(rlpBlock);
+        expect(parentHash).to.equal(block.parentHash);
+    });
+
+    it("prove block hashes", async () => {
+        const blockHeaders = [];
+        const startIndex = 5000000;
+        for (let index = startIndex; index < startIndex + 3; index++) {
+            const block = await remoteProvider.perform("getBlock", { blockTag: new BigNumber(index).toHexString() });
+            blockHeaders.push(rlpEncodedBlock(block));
+        }
+        const eventProof = await loadFixture(deployEventProof);
+        const result = await eventProof.functions.proveBlocks(blockHeaders);
+        
+        expect(result).to.equal(true);
+    }).timeout(100000);
 });
-
-

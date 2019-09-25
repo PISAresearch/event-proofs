@@ -1,5 +1,7 @@
 pragma solidity ^0.5.11;
+pragma experimental ABIEncoderV2;
 import "./PatriciaTree.sol";
+
 
 contract EventProof {
     // just a public method to test the merkle patricia proof
@@ -19,7 +21,7 @@ contract EventProof {
      */
     function extractReceiptsRoot(
         bytes memory rlpEncodedBlock
-    ) public pure returns (bytes32) {
+    ) public pure returns (bytes32 receiptsRoot) {
         // Adapted from:
         // https://github.com/figs999/Ethereum/blob/master/EventStorage.sol
         // where copyCallData is used:
@@ -29,8 +31,7 @@ contract EventProof {
 
         assembly {
             // rlp encoded position of receipts root is 189
-            mstore(0x0, mload(add(rlpEncodedBlock, 189)))
-            return(0x0, 32)
+            receiptsRoot := mload(add(rlpEncodedBlock, 189))
         }
     }
 
@@ -52,5 +53,26 @@ contract EventProof {
 
         // use the root to prove inclusion of the receipt
         return MerklePatriciaProof.verify(rlpEncodedReceipt, receiptPath, receiptWitness, receiptsRoot);
+    }
+
+    function proveBlocks(
+        bytes[] memory rlpEncodedHeaders
+    ) public pure returns(bool) {
+        for(uint index = rlpEncodedHeaders.length - 1; index > 0; index--){
+            require(
+                keccak256(rlpEncodedHeaders[index - 1]) == extractParentHash(rlpEncodedHeaders[index]),
+                "Incorrect parent hash."
+            );
+        }
+        return true;
+    }
+
+    function extractParentHash(
+        bytes memory rlpEncodedHeader
+    ) public pure returns(bytes32 parentHash) {
+        assembly {
+            // rlp encoded position of parent hash is 36
+            parentHash := mload(add(rlpEncodedHeader, 36))
+        }
     }
 }
