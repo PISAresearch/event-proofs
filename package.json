@@ -34,7 +34,7 @@
     "ganache-core": "^2.8.0",
     "leveldown": "^5.2.1",
     "levelup": "^4.2.0",
-    "mocha": "^6.2.0",
+    "mocha": "^11.7.5",
     "ts-node": "^8.3.0",
     "typechain": "^0.3.20",
     "typescript": "^3.6.2"
